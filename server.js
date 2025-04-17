@@ -22,6 +22,21 @@ const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const SERPER_API_KEY = process.env.SERPER_API_KEY;
 
 let threadId = null;
+// ➡️ Détecter si la réponse est trop vague
+function needExtraSearch(text) {
+  const patterns = [
+    /consulter/i,
+    /vérifier/i,
+    /plateformes?/i,
+    /TripAdvisor/i,
+    /Yelp/i,
+    /je vous recommande de chercher/i,
+    /vous pouvez rechercher/i,
+    /plus d'informations en ligne/i
+  ];
+  return patterns.some(pattern => pattern.test(text));
+}
+
 let previousUserMessage = null;
 
 // 🔎 Fonction de recherche sur Internet via Serper
@@ -210,45 +225,48 @@ await ensureThreadReady();
     const messages = messagesRes.data.data;
     const lastMessage = messages.find(m => m.role === 'assistant');
 
-    if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
-      let reply = lastMessage.content[0].text.value;
+if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
+  let reply = lastMessage.content[0].text.value;
+  reply = reply.replace(/【.*?†.*?】/g, '').trim();
 
-      // Nettoyer les balises 【xx†source】
-      reply = reply.replace(/【.*?†.*?】/g, '').trim();
+  const intro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
 
-      // Ajouter intro amicale
-      const personalizedIntro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
+  // ➡️ Si la réponse est vague ➔ lancer une recherche Google automatique
+  if (needExtraSearch(reply)) {
+    console.log('🔎 Réponse vague détectée ➔ Lancement d’une recherche Google...');
+    const googleResult = await searchGoogle(previousUserMessage || userMessage || 'informations Coupvray');
+    reply = googleResult;
+  }
 
-      // Formater joliment la réponse
-      reply = reply
-        .replace(/\*\*(.*?)\*\*/g, '**$1**')
-        .replace(/1\./g, '<br>1.')
-        .replace(/2\./g, '<br>2.')
-        .replace(/3\./g, '<br>3.')
-        .replace(/4\./g, '<br>4.')
-        .replace(/5\./g, '<br>5.')
-        .replace(/•/g, '<br>•')
-        .replace(/(https?:\/\/\S+)/g, '<br>👉 $1')
-        .replace(/\n{2,}/g, '<br><br>');
+  // ➡️ Mise en page jolie
+  reply = reply
+    .replace(/\*\*(.*?)\*\*/g, '**$1**')
+    .replace(/1\./g, '<br>1.')
+    .replace(/2\./g, '<br>2.')
+    .replace(/3\./g, '<br>3.')
+    .replace(/4\./g, '<br>4.')
+    .replace(/5\./g, '<br>5.')
+    .replace(/•/g, '<br>•')
+    .replace(/(https?:\/\/\S+)/g, '<br>👉 $1')
+    .replace(/\n{2,}/g, '<br><br>');
 
-      // Ajouter boutons à la fin
-      const buttonsHTML = `
-        <br><br>
-        <button style="padding: 8px 16px; background-color: #00AEEF; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;" onclick="window.location.reload()">Poser une autre question</button>
-        <a href="https://wa.me/33633352067" target="_blank" style="text-decoration: none;">
-          <button style="padding: 8px 16px; background-color: #25D366; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;">Contacter via WhatsApp</button>
-        </a>
-        <a href="tel:+33633352067" style="text-decoration: none;">
-          <button style="padding: 8px 16px; background-color: #28A745; color: white; border: none; border-radius: 6px; cursor: pointer;">Appeler Key Garden</button>
-        </a>
-      `;
+  const buttonsHTML = `
+    <br><br>
+    <button style="padding: 8px 16px; background-color: #00AEEF; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;" onclick="window.location.reload()">Poser une autre question</button>
+    <a href="https://wa.me/33633352067" target="_blank" style="text-decoration: none;">
+      <button style="padding: 8px 16px; background-color: #25D366; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;">Contacter via WhatsApp</button>
+    </a>
+    <a href="tel:+33633352067" style="text-decoration: none;">
+      <button style="padding: 8px 16px; background-color: #28A745; color: white; border: none; border-radius: 6px; cursor: pointer;">Appeler Key Garden</button>
+    </a>`;
 
-      const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre séjour en toute sérénité</div>`;
+  const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre séjour en toute sérénité</div>`;
 
-      previousUserMessage = userMessage;
+  previousUserMessage = userMessage;
 
-      return res.json({ reply: personalizedIntro + reply + buttonsHTML + signature });
-    } else {
+  return res.json({ reply: intro + reply + buttonsHTML + signature });
+}
+else {
       return res.json({ reply: "Je suis désolé, je n’ai pas trouvé cette information pour le moment. Souhaitez-vous que je fasse une recherche sur Internet pour vous aider davantage ?" });
     }
   } catch (err) {
