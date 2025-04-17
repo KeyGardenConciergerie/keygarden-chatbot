@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key Garden Bot 🌿</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f8f7;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    #logo {
+      margin: 20px auto 10px auto;
+      display: block;
+      width: 120px;
+      height: auto;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    #presentation {
+      background-color: #d1f2eb;
+      color: #2c3e50;
+      text-align: center;
+      padding: 20px;
+      margin: 10px;
+      border-radius: 10px;
+      font-size: 1em;
+    }
+
+    #loading {
+      display: none;
+      text-align: center;
+      font-style: italic;
+      color: grey;
+      margin: 10px;
+    }
+
+    #chat {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+      background: white;
+    }
+
+    #input {
+      display: flex;
+      padding: 10px;
+      background: #eee;
+      align-items: center;
+    }
+
+    #input input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      margin-right: 10px;
+    }
+
+    #input button {
+      padding: 10px 20px;
+      background: #00AEEF;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .message {
+      margin: 10px 0;
+      max-width: 80%;
+      padding: 10px;
+      border-radius: 12px;
+    }
+
+    .user {
+      background-color: #e1f5fe;
+      color: #0277bd;
+      align-self: flex-end;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .bot {
+      background-color: #f1f8e9;
+      color: #33691e;
+      align-self: flex-start;
+      margin-right: auto;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ton logo centré -->
+  <img id="logo" src="https://lh3.googleusercontent.com/p/AF1QipNMS8KgRdeHnpJdp-w-hYFJigZBKwzx_w8qAV2L=s680-w680-h510" alt="Logo Key Garden Conciergerie">
+
+  <!-- Présentation -->
+  <div id="presentation">
+    <strong>Bienvenue chez Key Garden Conciergerie 🌿</strong><br>
+    Posez votre question concernant votre séjour, nous sommes là pour vous aider !
+  </div>
+
+  <!-- Chargement -->
+  <div id="loading">
+    Key Garden prépare votre réponse...
+  </div>
+
+  <!-- Chat -->
+  <div id="chat"></div>
+
+  <!-- Input utilisateur -->
+  <div id="input">
+    <input type="text" id="userInput" placeholder="Posez votre question...">
+    <button onclick="sendMessage()">Envoyer</button>
+  </div>
+
+  <!-- Script -->
+  <script>
+    const chatDiv = document.getElementById('chat');
+    const userInput = document.getElementById('userInput');
+    const presentation = document.getElementById('presentation');
+    const loading = document.getElementById('loading');
+
+    async function sendMessage() {
+      const message = userInput.value.trim();
+      if (!message) return;
+
+      presentation.style.display = 'none';
+      loading.style.display = 'block';
+
+      appendMessage('Vous', message, 'user');
+      userInput.value = '';
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        appendMessage('KG Bot', data.reply, 'bot');
+        loading.style.display = 'none';
+      } catch (err) {
+        appendMessage('Erreur', 'Impossible de contacter le serveur.', 'bot');
+        loading.style.display = 'none';
+      }
+    }
+
+    function appendMessage(sender, text, type) {
+      const div = document.createElement('div');
+      div.className = `message ${type}`;
+      div.innerHTML = `<strong>${sender} :</strong><br>${text}`;
+      chatDiv.appendChild(div);
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+  </script>
+
+</body>
+</html>
+
