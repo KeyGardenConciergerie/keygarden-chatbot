@@ -64,6 +64,28 @@ app.post('/chat', async (req, res) => {
       return res.json({ reply: result });
     }
 
+    async function ensureThreadReady() {
+  try {
+    if (threadId) {
+      // Vérifie s’il y a un run actif sur le thread actuel
+      const runsRes = await axios.get(
+        `https://api.openai.com/v1/threads/${threadId}/runs`,
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'OpenAI-Beta': 'assistants=v2'
+          }
+        }
+      );
+
+      const activeRun = runsRes.data.data.find(run => run.status === 'in_progress' || run.status === 'queued');
+
+      if (activeRun) {
+        console.log('⚡ Run actif détecté ➔ Création d\'un nouveau thread');
+        threadId = null; // Reset thread si bloqué
+      }
+    }
+
     if (!threadId) {
       const threadRes = await axios.post(
         'https://api.openai.com/v1/threads',
@@ -77,7 +99,16 @@ app.post('/chat', async (req, res) => {
         }
       );
       threadId = threadRes.data.id;
+      console.log('🧵 Nouveau thread créé :', threadId);
     }
+
+  } catch (err) {
+    console.error('Erreur ensureThreadReady:', err.response?.data || err.message);
+    throw new Error("Impossible de créer ou récupérer un thread.");
+  }
+}
+
+await ensureThreadReady();
 
     await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
