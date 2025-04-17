@@ -230,6 +230,10 @@ app.post('/chat', async (req, res) => {
 });
 
 // ✅ Lancer le serveur
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/index.html');
+});
+
 app.listen(PORT, () => {
   console.log(`Serveur actif sur le port ${PORT}`);
 });
