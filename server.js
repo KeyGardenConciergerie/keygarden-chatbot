@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 require('dotenv').config();
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,14 +12,19 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('.'));
 
+// ➡️ Sert ton index.html à la racine
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const SERPER_API_KEY = process.env.SERPER_API_KEY;
 
 let threadId = null;
-let previousUserMessage = null; // pour récupérer la requête précédente si l’utilisateur dit "oui"
+let previousUserMessage = null;
 
-// 🔎 Fonction de recherche internet via Serper
+// 🔎 Fonction de recherche sur Internet via Serper
 async function searchGoogle(query) {
   try {
     const response = await axios.post(
@@ -53,13 +59,11 @@ app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
 
   try {
-    // ✅ Si l'utilisateur dit "oui" ➔ relance la dernière recherche
     if (["oui", "vas-y", "ok", "d’accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
       const result = await searchGoogle(previousUserMessage || 'informations Coupvray');
       return res.json({ reply: result });
     }
 
-    // ✅ Création du thread si pas encore fait
     if (!threadId) {
       const threadRes = await axios.post(
         'https://api.openai.com/v1/threads',
@@ -75,7 +79,6 @@ app.post('/chat', async (req, res) => {
       threadId = threadRes.data.id;
     }
 
-    // ✅ Envoi du message utilisateur
     await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
       { role: 'user', content: userMessage },
@@ -88,7 +91,6 @@ app.post('/chat', async (req, res) => {
       }
     );
 
-    // ✅ Lancer un run assistant
     const runRes = await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/runs`,
       { assistant_id: ASSISTANT_ID },
@@ -105,7 +107,6 @@ app.post('/chat', async (req, res) => {
     let runStatus = 'in_progress';
     let toolCalls = [];
 
-    // ✅ Attendre que le run se termine
     while (runStatus === 'in_progress') {
       await new Promise(resolve => setTimeout(resolve, 1000));
       const statusRes = await axios.get(
@@ -121,7 +122,6 @@ app.post('/chat', async (req, res) => {
       toolCalls = statusRes.data.required_action?.submit_tool_outputs?.tool_calls || [];
     }
 
-    // ✅ Gestion des outils appelés par l'assistant (recherche google par exemple)
     if (toolCalls.length > 0) {
       const toolOutputs = await Promise.all(toolCalls.map(async (toolCall) => {
         const toolName = toolCall.function.name;
@@ -149,7 +149,6 @@ app.post('/chat', async (req, res) => {
           }
         );
 
-        // Re-attendre que le run se termine
         runStatus = 'in_progress';
         while (runStatus === 'in_progress') {
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -167,7 +166,6 @@ app.post('/chat', async (req, res) => {
       }
     }
 
-    // ✅ Récupération de la réponse finale
     const messagesRes = await axios.get(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
       {
@@ -184,13 +182,13 @@ app.post('/chat', async (req, res) => {
     if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
       let reply = lastMessage.content[0].text.value;
 
-      // ✅ Nettoyer les balises inutiles 【xx†source】
+      // Nettoyer les balises 【xx†source】
       reply = reply.replace(/【.*?†.*?】/g, '').trim();
 
-      // ✅ Ajouter intro amicale
+      // Ajouter intro amicale
       const personalizedIntro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
 
-      // ✅ Formater joliment la réponse
+      // Formater joliment la réponse
       reply = reply
         .replace(/\*\*(.*?)\*\*/g, '**$1**')
         .replace(/1\./g, '<br>1.')
@@ -202,7 +200,7 @@ app.post('/chat', async (req, res) => {
         .replace(/(https?:\/\/\S+)/g, '<br>👉 $1')
         .replace(/\n{2,}/g, '<br><br>');
 
-      // ✅ Ajouter boutons à la fin
+      // Ajouter boutons à la fin
       const buttonsHTML = `
         <br><br>
         <button style="padding: 8px 16px; background-color: #00AEEF; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;" onclick="window.location.reload()">Poser une autre question</button>
@@ -214,7 +212,6 @@ app.post('/chat', async (req, res) => {
         </a>
       `;
 
-      // ✅ Ajouter signature
       const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre séjour en toute sérénité</div>`;
 
       previousUserMessage = userMessage;
@@ -229,11 +226,6 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-// ✅ Lancer le serveur
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
-});
-
 app.listen(PORT, () => {
-  console.log(`Serveur actif sur le port ${PORT}`);
+  console.log(`✅ Serveur actif sur le port ${PORT}`);
 });
