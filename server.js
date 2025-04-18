@@ -24,6 +24,15 @@ const SERPER_API_KEY = process.env.SERPER_API_KEY;
 let threadId = null;
 let previousUserMessage = null;
 
+function needsDirectSearch(message) {
+  const keywords = [
+    "adresse", "localisation", "où se trouve", 
+    "où est situé", "numéro", "contact", "coordonnées", "téléphone"
+  ];
+  const lowerMessage = message.toLowerCase();
+  return keywords.some(keyword => lowerMessage.includes(keyword));
+}
+
 // ➡️ Détecter si la réponse est floue ou insuffisante
 function needExtraSearch(text) {
   const patterns = [
@@ -81,6 +90,16 @@ async function searchGoogle(query) {
 // 🚀 Route principale
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
+
+    // ➡️ Si la question est clairement une demande d'adresse, faire recherche directe
+  if (needsDirectSearch(userMessage)) {
+    console.log('📍 Détection d\'une question de localisation ➔ Recherche directe sur Internet...');
+    const searchQuery = `adresse ${previousUserMessage || ''} ${userMessage}`;
+    const result = await searchGoogle(searchQuery.trim());
+    previousUserMessage = userMessage;
+    return res.json({ reply: result });
+  }
+
 
   try {
     if (["oui", "vas-y", "ok", "d’accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
