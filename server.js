@@ -238,7 +238,11 @@ if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
   // ➡️ Vérifier si la réponse contient une adresse ; sinon, relancer une recherche Google
 if (!reply.match(/\d{2,} ?(rue|avenue|boulevard|place|route)/i)) {
   console.log('🔎 Aucune adresse détectée ➔ Recherche Google forcée...');
-  const searchQuery = previousUserMessage ? `${previousUserMessage} ${userMessage}` : userMessage;
+  const baseContext = "proximité appartement 16 rue du Moulin Coupvray";
+const searchQuery = previousUserMessage 
+  ? `${baseContext} ${previousUserMessage} ${userMessage}`
+  : `${baseContext} ${userMessage}`;
+
   reply = await searchGoogle(searchQuery || 'informations Coupvray');
 }
 
