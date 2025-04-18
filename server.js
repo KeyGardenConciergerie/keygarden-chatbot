@@ -12,7 +12,7 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('.'));
 
-// ➡️ Sert ton index.html à la racine
+// ➡️ Sert ton index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -24,41 +24,33 @@ const SERPER_API_KEY = process.env.SERPER_API_KEY;
 let threadId = null;
 let previousUserMessage = null;
 
+// ➡️ Détecter si la question est clairement une recherche Internet
 function needsDirectSearch(message) {
   const keywords = [
-    "adresse", "localisation", "où se trouve", 
+    "adresse", "localisation", "où se trouve",
     "où est situé", "numéro", "contact", "coordonnées", "téléphone"
   ];
   const lowerMessage = message.toLowerCase();
   return keywords.some(keyword => lowerMessage.includes(keyword));
 }
 
-// ➡️ Détecter si la réponse est floue ou insuffisante
+// ➡️ Détecter si la réponse est floue
 function needExtraSearch(text) {
   const patterns = [
-    /consulter/i,
-    /vérifier/i,
-    /plateformes?/i,
-    /TripAdvisor/i,
-    /Yelp/i,
-    /je vous recommande de chercher/i,
-    /plus d'informations en ligne/i,
-    /adresse/i,
-    /téléphone/i,
-    /numéro/i,
-    /coordonnées/i,
-    /horaires/i
+    /consulter/i, /vérifier/i, /plateformes?/i,
+    /TripAdvisor/i, /Yelp/i, /chercher/i,
+    /plus d'informations en ligne/i, /adresse/i, /numéro/i
   ];
   return patterns.some(pattern => pattern.test(text));
 }
 
-// ➡️ Reformuler la recherche Google si besoin
+// ➡️ Reformuler proprement une recherche
 function reformulateQuery(prev, current) {
-  const base = "informations pratiques autour de Coupvray appartement 16 rue du Moulin";
+  const base = "appartement 16 rue du Moulin Coupvray informations pratiques";
   return `${base} ${prev || ''} ${current}`.trim();
 }
 
-// 🔎 Fonction de recherche Google via Serper
+// 🔎 Fonction de recherche Internet via Serper
 async function searchGoogle(query) {
   try {
     const response = await axios.post(
@@ -82,28 +74,27 @@ async function searchGoogle(query) {
       return "Je n’ai pas trouvé de résultats pertinents.";
     }
   } catch (err) {
-    console.error('Erreur Serper:', err.response ? err.response.data : err.message);
+    console.error('Erreur Serper:', err.response?.data || err.message);
     return "Erreur lors de la recherche sur Internet.";
   }
 }
 
-// 🚀 Route principale
+// 🚀 Chatbot principal
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
 
-    // ➡️ Si la question est clairement une demande d'adresse, faire recherche directe
-  if (needsDirectSearch(userMessage)) {
-    console.log('📍 Détection d\'une question de localisation ➔ Recherche directe sur Internet...');
-    const searchQuery = `adresse ${previousUserMessage || ''} ${userMessage}`;
-    const result = await searchGoogle(searchQuery.trim());
-    previousUserMessage = userMessage;
-    return res.json({ reply: result });
-  }
-
-
   try {
     if (["oui", "vas-y", "ok", "d’accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
-      const result = await searchGoogle(previousUserMessage || 'informations Coupvray');
+      const searchQuery = reformulateQuery(previousUserMessage, userMessage);
+      const result = await searchGoogle(searchQuery);
+      previousUserMessage = userMessage;
+      return res.json({ reply: result });
+    }
+
+    if (needsDirectSearch(userMessage)) {
+      const searchQuery = `adresse ${previousUserMessage || ''} ${userMessage}`;
+      const result = await searchGoogle(searchQuery.trim());
+      previousUserMessage = userMessage;
       return res.json({ reply: result });
     }
 
@@ -118,6 +109,7 @@ app.post('/chat', async (req, res) => {
         threadId = null;
       }
     }
+
     if (!threadId) {
       const threadRes = await axios.post(
         'https://api.openai.com/v1/threads',
@@ -141,7 +133,6 @@ app.post('/chat', async (req, res) => {
 
     const runId = runRes.data.id;
     let runStatus = 'in_progress';
-    let toolCalls = [];
 
     while (runStatus === 'in_progress') {
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -150,38 +141,6 @@ app.post('/chat', async (req, res) => {
         { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2' } }
       );
       runStatus = statusRes.data.status;
-      toolCalls = statusRes.data.required_action?.submit_tool_outputs?.tool_calls || [];
-    }
-
-    if (toolCalls.length > 0) {
-      const toolOutputs = await Promise.all(toolCalls.map(async (toolCall) => {
-        const args = JSON.parse(toolCall.function.arguments);
-        if (toolCall.function.name === 'search_google') {
-          const result = await searchGoogle(args.query);
-          return { tool_call_id: toolCall.id, output: result };
-        }
-        return null;
-      }));
-
-      const filteredOutputs = toolOutputs.filter(Boolean);
-
-      if (filteredOutputs.length > 0) {
-        await axios.post(
-          `https://api.openai.com/v1/threads/${threadId}/runs/${runId}/submit_tool_outputs`,
-          { tool_outputs: filteredOutputs },
-          { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2', 'Content-Type': 'application/json' } }
-        );
-
-        runStatus = 'in_progress';
-        while (runStatus === 'in_progress') {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const statusRes = await axios.get(
-            `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
-            { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2' } }
-          );
-          runStatus = statusRes.data.status;
-        }
-      }
     }
 
     const messagesRes = await axios.get(
@@ -192,20 +151,18 @@ app.post('/chat', async (req, res) => {
     const messages = messagesRes.data.data;
     const lastMessage = messages.find(m => m.role === 'assistant');
 
-    if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
+    if (lastMessage && lastMessage.content?.length > 0) {
       let reply = lastMessage.content[0].text.value;
       reply = reply.replace(/【.*?†.*?】/g, '').trim();
 
-      // ➡️ Si la réponse est floue ➔ relance Google
       if (needExtraSearch(reply)) {
-        const reformulated = reformulateQuery(previousUserMessage, userMessage);
-        console.log('🔎 Recherche supplémentaire lancée...');
-        reply = await searchGoogle(reformulated);
+        const searchQuery = reformulateQuery(previousUserMessage, userMessage);
+        reply = await searchGoogle(searchQuery);
       }
 
       previousUserMessage = userMessage;
 
-      // ➡️ Mise en page comme tu aimes
+      // ➡️ Mise en page élégante
       reply = reply
         .replace(/\*\*(.*?)\*\*/g, '**$1**')
         .replace(/1\./g, '<br>1.')
@@ -227,14 +184,16 @@ app.post('/chat', async (req, res) => {
         <a href="tel:+33633352067" style="text-decoration: none;">
           <button style="padding: 8px 16px; background-color: #28A745; color: white; border: none; border-radius: 6px; cursor: pointer;">Appeler Key Garden</button>
         </a>`;
+
       const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre séjour en toute sérénité</div>`;
 
       return res.json({ reply: intro + reply + buttonsHTML + signature });
     } else {
-      return res.json({ reply: "Je suis désolé, je n’ai pas trouvé cette information pour le moment. Souhaitez-vous que je fasse une recherche sur Internet pour vous aider davantage ?" });
+      return res.json({ reply: "Je suis désolé, je n'ai pas trouvé cette information pour le moment. Souhaitez-vous que je fasse une recherche sur Internet pour vous aider davantage ?" });
     }
+
   } catch (err) {
-    console.error('Erreur API OpenAI :', err.response ? err.response.data : err.message);
+    console.error('Erreur API OpenAI :', err.response?.data || err.message);
     res.status(500).json({ error: 'Erreur du chatbot.' });
   }
 });
