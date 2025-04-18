@@ -1,5 +1,3 @@
-// server.js complet corrige et adapte pour toi Corinne !
-
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -14,7 +12,7 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('.'));
 
-// Sert ton index.html a la racine
+// ➡️ Sert ton index.html à la racine
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -26,7 +24,7 @@ const SERPER_API_KEY = process.env.SERPER_API_KEY;
 let threadId = null;
 let previousUserMessage = null;
 
-// Detecter si la reponse est trop vague
+// ➡️ Détecter si la réponse est floue ou insuffisante
 function needExtraSearch(text) {
   const patterns = [
     /consulter/i,
@@ -35,7 +33,6 @@ function needExtraSearch(text) {
     /TripAdvisor/i,
     /Yelp/i,
     /je vous recommande de chercher/i,
-    /vous pouvez rechercher/i,
     /plus d'informations en ligne/i,
     /adresse/i,
     /téléphone/i,
@@ -46,26 +43,13 @@ function needExtraSearch(text) {
   return patterns.some(pattern => pattern.test(text));
 }
 
-// Reformuler intelligemment la recherche avant Google
-function reformulateQuery(previousUserMessage, userMessage) {
-  const context = "proximite appartement 16 rue du Moulin a Coupvray";
-  const last = previousUserMessage?.toLowerCase() || "";
-  const current = userMessage?.toLowerCase() || "";
-
-  if (current.includes("adresse") || current.includes("adresses")) {
-    if (last.includes("restaurant") || last.includes("restaurants")) {
-      return `${context} adresses des restaurants autour`;
-    } else if (last.includes("commerces") || last.includes("magasins")) {
-      return `${context} adresses des commerces alentours`;
-    } else {
-      return `${context} adresses autour`;
-    }
-  }
-
-  return `${context} ${last} ${current}`;
+// ➡️ Reformuler la recherche Google si besoin
+function reformulateQuery(prev, current) {
+  const base = "informations pratiques autour de Coupvray appartement 16 rue du Moulin";
+  return `${base} ${prev || ''} ${current}`.trim();
 }
 
-// Fonction recherche Google via Serper
+// 🔎 Fonction de recherche Google via Serper
 async function searchGoogle(query) {
   try {
     const response = await axios.post(
@@ -84,7 +68,6 @@ async function searchGoogle(query) {
       const title = result.title || '';
       const snippet = result.snippet || '';
       const link = result.link || '';
-
       return `🔎 **${title}**\n${snippet}\n👉 [Voir en ligne](${link})`;
     } else {
       return "Je n’ai pas trouvé de résultats pertinents.";
@@ -95,83 +78,46 @@ async function searchGoogle(query) {
   }
 }
 
-// Route principale chatbot
+// 🚀 Route principale
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
 
   try {
-    if (["oui", "vas-y", "ok", "d'accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
+    if (["oui", "vas-y", "ok", "d’accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
       const result = await searchGoogle(previousUserMessage || 'informations Coupvray');
       return res.json({ reply: result });
     }
 
-    // Preparation du thread OpenAI
-    async function ensureThreadReady() {
-      try {
-        if (threadId) {
-          const runsRes = await axios.get(
-            `https://api.openai.com/v1/threads/${threadId}/runs`,
-            {
-              headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'assistants=v2'
-              }
-            }
-          );
-          const activeRun = runsRes.data.data.find(run => run.status === 'in_progress' || run.status === 'queued');
-
-          if (activeRun) {
-            console.log('⚡ Run actif detecte ➔ Creation d\'un nouveau thread');
-            threadId = null;
-          }
-        }
-
-        if (!threadId) {
-          const threadRes = await axios.post(
-            'https://api.openai.com/v1/threads',
-            {},
-            {
-              headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'assistants=v2',
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-          threadId = threadRes.data.id;
-          console.log('🧵 Nouveau thread cree :', threadId);
-        }
-
-      } catch (err) {
-        console.error('Erreur ensureThreadReady:', err.response?.data || err.message);
-        throw new Error("Impossible de creer ou recuperer un thread.");
+    // ➡️ Vérification thread
+    if (threadId) {
+      const runsRes = await axios.get(
+        `https://api.openai.com/v1/threads/${threadId}/runs`,
+        { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2' } }
+      );
+      const activeRun = runsRes.data.data.find(run => run.status === 'in_progress' || run.status === 'queued');
+      if (activeRun) {
+        threadId = null;
       }
     }
-
-    await ensureThreadReady();
+    if (!threadId) {
+      const threadRes = await axios.post(
+        'https://api.openai.com/v1/threads',
+        {},
+        { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2', 'Content-Type': 'application/json' } }
+      );
+      threadId = threadRes.data.id;
+    }
 
     await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
       { role: 'user', content: userMessage },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2',
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2', 'Content-Type': 'application/json' } }
     );
 
     const runRes = await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/runs`,
       { assistant_id: ASSISTANT_ID },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2',
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2', 'Content-Type': 'application/json' } }
     );
 
     const runId = runRes.data.id;
@@ -182,12 +128,7 @@ app.post('/chat', async (req, res) => {
       await new Promise(resolve => setTimeout(resolve, 1000));
       const statusRes = await axios.get(
         `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'OpenAI-Beta': 'assistants=v2'
-          }
-        }
+        { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2' } }
       );
       runStatus = statusRes.data.status;
       toolCalls = statusRes.data.required_action?.submit_tool_outputs?.tool_calls || [];
@@ -195,12 +136,9 @@ app.post('/chat', async (req, res) => {
 
     if (toolCalls.length > 0) {
       const toolOutputs = await Promise.all(toolCalls.map(async (toolCall) => {
-        const toolName = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
-
-        if (toolName === 'search_google') {
-          const searchQuery = reformulateQuery(previousUserMessage, userMessage);
-          const result = await searchGoogle(searchQuery);
+        if (toolCall.function.name === 'search_google') {
+          const result = await searchGoogle(args.query);
           return { tool_call_id: toolCall.id, output: result };
         }
         return null;
@@ -212,25 +150,24 @@ app.post('/chat', async (req, res) => {
         await axios.post(
           `https://api.openai.com/v1/threads/${threadId}/runs/${runId}/submit_tool_outputs`,
           { tool_outputs: filteredOutputs },
-          {
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              'OpenAI-Beta': 'assistants=v2',
-              'Content-Type': 'application/json'
-            }
-          }
+          { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2', 'Content-Type': 'application/json' } }
         );
+
+        runStatus = 'in_progress';
+        while (runStatus === 'in_progress') {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const statusRes = await axios.get(
+            `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
+            { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2' } }
+          );
+          runStatus = statusRes.data.status;
+        }
       }
     }
 
     const messagesRes = await axios.get(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2'
-        }
-      }
+      { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'OpenAI-Beta': 'assistants=v2' } }
     );
 
     const messages = messagesRes.data.data;
@@ -240,18 +177,16 @@ app.post('/chat', async (req, res) => {
       let reply = lastMessage.content[0].text.value;
       reply = reply.replace(/【.*?†.*?】/g, '').trim();
 
-      if (!reply.match(/\d{2,} ?(rue|avenue|boulevard|place|route)/i)) {
-        const searchQuery = reformulateQuery(previousUserMessage, userMessage);
-        reply = await searchGoogle(searchQuery);
-      }
-
+      // ➡️ Si la réponse est floue ➔ relance Google
       if (needExtraSearch(reply)) {
-        const searchQuery = reformulateQuery(previousUserMessage, userMessage);
-        reply = await searchGoogle(searchQuery);
+        const reformulated = reformulateQuery(previousUserMessage, userMessage);
+        console.log('🔎 Recherche supplémentaire lancée...');
+        reply = await searchGoogle(reformulated);
       }
 
-      const intro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
+      previousUserMessage = userMessage;
 
+      // ➡️ Mise en page comme tu aimes
       reply = reply
         .replace(/\*\*(.*?)\*\*/g, '**$1**')
         .replace(/1\./g, '<br>1.')
@@ -259,22 +194,28 @@ app.post('/chat', async (req, res) => {
         .replace(/3\./g, '<br>3.')
         .replace(/4\./g, '<br>4.')
         .replace(/5\./g, '<br>5.')
-        .replace(/\u2022/g, '<br>•')
+        .replace(/•/g, '<br>•')
         .replace(/(https?:\/\/\S+)/g, '<br>👉 $1')
         .replace(/\n{2,}/g, '<br><br>');
 
-      const buttonsHTML = `<br><br><button onclick="window.location.reload()">Poser une autre question</button><br><a href="https://wa.me/33633352067" target="_blank">Contacter via WhatsApp</a><br><a href="tel:+33633352067">Appeler Key Garden</a>`;
-      const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre sejour en toute serenite</div>`;
-
-      previousUserMessage = userMessage;
+      const intro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
+      const buttonsHTML = `
+        <br><br>
+        <button style="padding: 8px 16px; background-color: #00AEEF; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;" onclick="window.location.reload()">Poser une autre question</button>
+        <a href="https://wa.me/33633352067" target="_blank" style="text-decoration: none;">
+          <button style="padding: 8px 16px; background-color: #25D366; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;">Contacter via WhatsApp</button>
+        </a>
+        <a href="tel:+33633352067" style="text-decoration: none;">
+          <button style="padding: 8px 16px; background-color: #28A745; color: white; border: none; border-radius: 6px; cursor: pointer;">Appeler Key Garden</button>
+        </a>`;
+      const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre séjour en toute sérénité</div>`;
 
       return res.json({ reply: intro + reply + buttonsHTML + signature });
     } else {
-      return res.json({ reply: "Je suis desole, je n'ai pas trouve cette information pour le moment." });
+      return res.json({ reply: "Je suis désolé, je n’ai pas trouvé cette information pour le moment. Souhaitez-vous que je fasse une recherche sur Internet pour vous aider davantage ?" });
     }
-
   } catch (err) {
-    console.error('Erreur API OpenAI:', err.response ? err.response.data : err.message);
+    console.error('Erreur API OpenAI :', err.response ? err.response.data : err.message);
     res.status(500).json({ error: 'Erreur du chatbot.' });
   }
 });
