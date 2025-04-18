@@ -234,7 +234,7 @@ if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
   // ➡️ Si la réponse est vague ➔ lancer une recherche Google automatique
   if (needExtraSearch(reply)) {
     console.log('🔎 Réponse vague détectée ➔ Lancement d’une recherche Google...');
-    const googleResult = await searchGoogle(previousUserMessage || userMessage || 'informations Coupvray');
+    const googleResult = await searchGoogle(userMessage || 'informations Coupvray');
     reply = googleResult;
   }
 
