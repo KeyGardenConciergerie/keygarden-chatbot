@@ -1,3 +1,5 @@
+// server.js complet corrige et adapte pour toi Corinne !
+
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -12,7 +14,7 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('.'));
 
-// ➡️ Sert ton index.html à la racine
+// Sert ton index.html a la racine
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -22,7 +24,9 @@ const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const SERPER_API_KEY = process.env.SERPER_API_KEY;
 
 let threadId = null;
-// ➡️ Détecter si la réponse est trop vague
+let previousUserMessage = null;
+
+// Detecter si la reponse est trop vague
 function needExtraSearch(text) {
   const patterns = [
     /consulter/i,
@@ -42,10 +46,26 @@ function needExtraSearch(text) {
   return patterns.some(pattern => pattern.test(text));
 }
 
+// Reformuler intelligemment la recherche avant Google
+function reformulateQuery(previousUserMessage, userMessage) {
+  const context = "proximite appartement 16 rue du Moulin a Coupvray";
+  const last = previousUserMessage?.toLowerCase() || "";
+  const current = userMessage?.toLowerCase() || "";
 
-let previousUserMessage = null;
+  if (current.includes("adresse") || current.includes("adresses")) {
+    if (last.includes("restaurant") || last.includes("restaurants")) {
+      return `${context} adresses des restaurants autour`;
+    } else if (last.includes("commerces") || last.includes("magasins")) {
+      return `${context} adresses des commerces alentours`;
+    } else {
+      return `${context} adresses autour`;
+    }
+  }
 
-// 🔎 Fonction de recherche sur Internet via Serper
+  return `${context} ${last} ${current}`;
+}
+
+// Fonction recherche Google via Serper
 async function searchGoogle(query) {
   try {
     const response = await axios.post(
@@ -75,61 +95,60 @@ async function searchGoogle(query) {
   }
 }
 
-// 🚀 Route principale du chatbot
+// Route principale chatbot
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
 
   try {
-    if (["oui", "vas-y", "ok", "d’accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
+    if (["oui", "vas-y", "ok", "d'accord", "allez-y"].includes(userMessage.toLowerCase().trim())) {
       const result = await searchGoogle(previousUserMessage || 'informations Coupvray');
       return res.json({ reply: result });
     }
 
+    // Preparation du thread OpenAI
     async function ensureThreadReady() {
-  try {
-    if (threadId) {
-      // Vérifie s’il y a un run actif sur le thread actuel
-      const runsRes = await axios.get(
-        `https://api.openai.com/v1/threads/${threadId}/runs`,
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'OpenAI-Beta': 'assistants=v2'
+      try {
+        if (threadId) {
+          const runsRes = await axios.get(
+            `https://api.openai.com/v1/threads/${threadId}/runs`,
+            {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'assistants=v2'
+              }
+            }
+          );
+          const activeRun = runsRes.data.data.find(run => run.status === 'in_progress' || run.status === 'queued');
+
+          if (activeRun) {
+            console.log('⚡ Run actif detecte ➔ Creation d\'un nouveau thread');
+            threadId = null;
           }
         }
-      );
 
-      const activeRun = runsRes.data.data.find(run => run.status === 'in_progress' || run.status === 'queued');
+        if (!threadId) {
+          const threadRes = await axios.post(
+            'https://api.openai.com/v1/threads',
+            {},
+            {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'assistants=v2',
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          threadId = threadRes.data.id;
+          console.log('🧵 Nouveau thread cree :', threadId);
+        }
 
-      if (activeRun) {
-        console.log('⚡ Run actif détecté ➔ Création d\'un nouveau thread');
-        threadId = null; // Reset thread si bloqué
+      } catch (err) {
+        console.error('Erreur ensureThreadReady:', err.response?.data || err.message);
+        throw new Error("Impossible de creer ou recuperer un thread.");
       }
     }
 
-    if (!threadId) {
-      const threadRes = await axios.post(
-        'https://api.openai.com/v1/threads',
-        {},
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'OpenAI-Beta': 'assistants=v2',
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      threadId = threadRes.data.id;
-      console.log('🧵 Nouveau thread créé :', threadId);
-    }
-
-  } catch (err) {
-    console.error('Erreur ensureThreadReady:', err.response?.data || err.message);
-    throw new Error("Impossible de créer ou récupérer un thread.");
-  }
-}
-
-await ensureThreadReady();
+    await ensureThreadReady();
 
     await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
@@ -180,7 +199,8 @@ await ensureThreadReady();
         const args = JSON.parse(toolCall.function.arguments);
 
         if (toolName === 'search_google') {
-          const result = await searchGoogle(args.query);
+          const searchQuery = reformulateQuery(previousUserMessage, userMessage);
+          const result = await searchGoogle(searchQuery);
           return { tool_call_id: toolCall.id, output: result };
         }
         return null;
@@ -200,21 +220,6 @@ await ensureThreadReady();
             }
           }
         );
-
-        runStatus = 'in_progress';
-        while (runStatus === 'in_progress') {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const statusRes = await axios.get(
-            `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'assistants=v2'
-              }
-            }
-          );
-          runStatus = statusRes.data.status;
-        }
       }
     }
 
@@ -231,69 +236,45 @@ await ensureThreadReady();
     const messages = messagesRes.data.data;
     const lastMessage = messages.find(m => m.role === 'assistant');
 
-if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
-  let reply = lastMessage.content[0].text.value;
-  reply = reply.replace(/【.*?†.*?】/g, '').trim();
+    if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
+      let reply = lastMessage.content[0].text.value;
+      reply = reply.replace(/【.*?†.*?】/g, '').trim();
 
-  // ➡️ Vérifier si la réponse contient une adresse ; sinon, relancer une recherche Google
-if (!reply.match(/\d{2,} ?(rue|avenue|boulevard|place|route)/i)) {
-  console.log('🔎 Aucune adresse détectée ➔ Recherche Google forcée...');
-  const baseContext = "proximité appartement 16 rue du Moulin Coupvray";
-const searchQuery = previousUserMessage 
-  ? `${baseContext} ${previousUserMessage} ${userMessage}`
-  : `${baseContext} ${userMessage}`;
+      if (!reply.match(/\d{2,} ?(rue|avenue|boulevard|place|route)/i)) {
+        const searchQuery = reformulateQuery(previousUserMessage, userMessage);
+        reply = await searchGoogle(searchQuery);
+      }
 
-  reply = await searchGoogle(searchQuery || 'informations Coupvray');
-}
+      if (needExtraSearch(reply)) {
+        const searchQuery = reformulateQuery(previousUserMessage, userMessage);
+        reply = await searchGoogle(searchQuery);
+      }
 
+      const intro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
 
-  const intro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
+      reply = reply
+        .replace(/\*\*(.*?)\*\*/g, '**$1**')
+        .replace(/1\./g, '<br>1.')
+        .replace(/2\./g, '<br>2.')
+        .replace(/3\./g, '<br>3.')
+        .replace(/4\./g, '<br>4.')
+        .replace(/5\./g, '<br>5.')
+        .replace(/\u2022/g, '<br>•')
+        .replace(/(https?:\/\/\S+)/g, '<br>👉 $1')
+        .replace(/\n{2,}/g, '<br><br>');
 
-  // ➡️ Si la réponse est vague ➔ lancer une recherche Google automatique
-  if (needExtraSearch(reply)) {
-    console.log('🔎 Réponse vague détectée ➔ Lancement d’une recherche Google...');
-    const searchQuery = previousUserMessage 
-  ? `${previousUserMessage} ${userMessage}` 
-  : userMessage;
+      const buttonsHTML = `<br><br><button onclick="window.location.reload()">Poser une autre question</button><br><a href="https://wa.me/33633352067" target="_blank">Contacter via WhatsApp</a><br><a href="tel:+33633352067">Appeler Key Garden</a>`;
+      const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre sejour en toute serenite</div>`;
 
-const googleResult = await searchGoogle(searchQuery || 'informations Coupvray');
+      previousUserMessage = userMessage;
 
-    reply = googleResult;
-  }
-
-  // ➡️ Mise en page jolie
-  reply = reply
-    .replace(/\*\*(.*?)\*\*/g, '**$1**')
-    .replace(/1\./g, '<br>1.')
-    .replace(/2\./g, '<br>2.')
-    .replace(/3\./g, '<br>3.')
-    .replace(/4\./g, '<br>4.')
-    .replace(/5\./g, '<br>5.')
-    .replace(/•/g, '<br>•')
-    .replace(/(https?:\/\/\S+)/g, '<br>👉 $1')
-    .replace(/\n{2,}/g, '<br><br>');
-
-  const buttonsHTML = `
-    <br><br>
-    <button style="padding: 8px 16px; background-color: #00AEEF; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;" onclick="window.location.reload()">Poser une autre question</button>
-    <a href="https://wa.me/33633352067" target="_blank" style="text-decoration: none;">
-      <button style="padding: 8px 16px; background-color: #25D366; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;">Contacter via WhatsApp</button>
-    </a>
-    <a href="tel:+33633352067" style="text-decoration: none;">
-      <button style="padding: 8px 16px; background-color: #28A745; color: white; border: none; border-radius: 6px; cursor: pointer;">Appeler Key Garden</button>
-    </a>`;
-
-  const signature = `<br><br><div style="font-size: 0.9em; color: #555;">— Key Garden Conciergerie 🌿<br>Votre séjour en toute sérénité</div>`;
-
-  previousUserMessage = userMessage;
-
-  return res.json({ reply: intro + reply + buttonsHTML + signature });
-}
-else {
-      return res.json({ reply: "Je suis désolé, je n’ai pas trouvé cette information pour le moment. Souhaitez-vous que je fasse une recherche sur Internet pour vous aider davantage ?" });
+      return res.json({ reply: intro + reply + buttonsHTML + signature });
+    } else {
+      return res.json({ reply: "Je suis desole, je n'ai pas trouve cette information pour le moment." });
     }
+
   } catch (err) {
-    console.error('Erreur API OpenAI :', err.response ? err.response.data : err.message);
+    console.error('Erreur API OpenAI:', err.response ? err.response.data : err.message);
     res.status(500).json({ error: 'Erreur du chatbot.' });
   }
 });
