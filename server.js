@@ -23,7 +23,7 @@ const SERPER_API_KEY = process.env.SERPER_API_KEY;
 
 let threadId = null;
 // ➡️ Détecter si la réponse est trop vague
-function needExtraSearch(text) {
+fufunction needExtraSearch(text) {
   const patterns = [
     /consulter/i,
     /vérifier/i,
@@ -32,10 +32,16 @@ function needExtraSearch(text) {
     /Yelp/i,
     /je vous recommande de chercher/i,
     /vous pouvez rechercher/i,
-    /plus d'informations en ligne/i
+    /plus d'informations en ligne/i,
+    /adresse/i,
+    /téléphone/i,
+    /numéro/i,
+    /coordonnées/i,
+    /horaires/i
   ];
   return patterns.some(pattern => pattern.test(text));
 }
+
 
 let previousUserMessage = null;
 
