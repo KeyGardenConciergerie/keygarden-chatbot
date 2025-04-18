@@ -235,6 +235,14 @@ if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
   let reply = lastMessage.content[0].text.value;
   reply = reply.replace(/【.*?†.*?】/g, '').trim();
 
+  // ➡️ Vérifier si la réponse contient une adresse ; sinon, relancer une recherche Google
+if (!reply.match(/\d{2,} ?(rue|avenue|boulevard|place|route)/i)) {
+  console.log('🔎 Aucune adresse détectée ➔ Recherche Google forcée...');
+  const searchQuery = previousUserMessage ? `${previousUserMessage} ${userMessage}` : userMessage;
+  reply = await searchGoogle(searchQuery || 'informations Coupvray');
+}
+
+
   const intro = `Merci pour votre question ! Voici ce que j'ai trouvé pour vous :<br><br>`;
 
   // ➡️ Si la réponse est vague ➔ lancer une recherche Google automatique
