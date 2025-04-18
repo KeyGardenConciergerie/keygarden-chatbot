@@ -23,7 +23,7 @@ const SERPER_API_KEY = process.env.SERPER_API_KEY;
 
 let threadId = null;
 // ➡️ Détecter si la réponse est trop vague
-fufunction needExtraSearch(text) {
+function needExtraSearch(text) {
   const patterns = [
     /consulter/i,
     /vérifier/i,
