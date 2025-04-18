@@ -240,7 +240,12 @@ if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
   // ➡️ Si la réponse est vague ➔ lancer une recherche Google automatique
   if (needExtraSearch(reply)) {
     console.log('🔎 Réponse vague détectée ➔ Lancement d’une recherche Google...');
-    const googleResult = await searchGoogle(userMessage || 'informations Coupvray');
+    const searchQuery = previousUserMessage 
+  ? `${previousUserMessage} ${userMessage}` 
+  : userMessage;
+
+const googleResult = await searchGoogle(searchQuery || 'informations Coupvray');
+
     reply = googleResult;
   }
 
